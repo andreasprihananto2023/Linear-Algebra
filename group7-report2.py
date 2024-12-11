@@ -1,94 +1,193 @@
+import streamlit as st
 import cv2
 import numpy as np
-import math
+import base64
 
+# Fungsi untuk mengompres gambar
+@st.cache_data
+def compress_image(image, max_size=(800, 800)):
+    """Mengompres gambar dengan menjaga rasio aspek"""
+    h, w = image.shape[:2]
+    ratio = min(max_size[0]/w, max_size[1]/h)
+    new_size = (int(w*ratio), int(h*ratio))
+    return cv2.resize(image, new_size, interpolation=cv2.INTER_AREA)
 
-image_path = r"C:\Users\ASUS\Documents\Semester 4\OpenCv\th-3844684407.jpg"
+# Fungsi untuk mengkonversi gambar ke base64
+def image_to_base64(image):
+    """Konversi gambar OpenCV ke base64"""
+    _, buffer = cv2.imencode('.png', image)
+    return base64.b64encode(buffer).decode('utf-8')
 
+# CSS Kustom
+def get_custom_css():
+    return """
+    <style>
+    .main-title {
+        color: #2c3e50;
+        text-align: center;
+        font-size: 2.5em;
+        margin-bottom: 20px;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+    }
+    .transform-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background-color: #f4f4f4;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .image-wrapper {
+        flex: 1;
+        margin: 0 10px;
+        text-align: center;
+        background-color: white;
+        padding: 10px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .image-wrapper img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 5px;
+    }
+    .slider-container {
+        background-color: #e9ecef;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+    }
+    </style>
+    """
 
-image = cv2.imread(image_path)
-if image is None:
-    raise FileNotFoundError(f"Gambar tidak ditemukan di path {image_path}")
+def main():
+    # Tambahkan CSS Kustom
+    st.markdown(get_custom_css(), unsafe_allow_html=True)
+    
+    # Judul dengan HTML
+    st.markdown('<h1 class="main-title">🖼️ Aplikasi Transformasi Gambar</h1>', unsafe_allow_html=True)
 
+    # Sidebar untuk pengaturan
+    with st.sidebar:
+        st.header("📝 Pilih Transformasi")
+        transform_type = st.radio(
+            "Jenis Transformasi",
+            ['Translasi', 'Rotasi', 'Skala', 'Distorsi']
+        )
 
-h, w = image.shape[:2]
+    # Unggah file
+    unggah_file = st.file_uploader(
+        "Unggah gambar dalam format JPEG atau PNG", 
+        type=["jpg", "jpeg", "png"]
+    )
 
+    if unggah_file is not None:
+        # Baca dan kompres gambar
+        file_bytes = np.asarray(bytearray(unggah_file.read()), dtype=np.uint8)
+        gambar_asli = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+        gambar_asli = compress_image(gambar_asli)
 
-# 1. Translation
-translation_matrix = np.array([[1, 0, 50],
-                               [0, 1, 30],
-                               [0, 0, 1]])
+        # Konversi gambar ke base64 untuk HTML
+        base64_asli = image_to_base64(cv2.cvtColor(gambar_asli, cv2.COLOR_BGR2RGB))
 
-translated_image = np.zeros_like(image)
-for y in range(h):
-    for x in range(w):
-        original_coords = np.array([x, y, 1])
-        new_coords = translation_matrix @ original_coords
-        new_x, new_y = int(new_coords[0]), int(new_coords[1])
+        # HTML untuk menampilkan gambar dengan CSS
+        html_content = f"""
+        <div class="transform-container">
+            <div class="image-wrapper">
+                <h3>Gambar Asli</h3>
+                <img src="data:image/png;base64,{base64_asli}" alt="Gambar Asli">
+            </div>
+        """
 
-        if 0 <= new_x < w and 0 <= new_y < h:
-            translated_image[new_y, new_x] = image[y, x]
+        # Transformasi dinamis
+        if transform_type == 'Translasi':
+            dx = st.slider("Translasi Horizontal (dx)", -200, 200, 50)
+            dy = st.slider("Translasi Vertikal (dy)", -200, 200, 30)
+            
+            # Transformasi
+            matriks_translasi = np.float32([[1, 0, dx], [0, 1, dy]])
+            gambar_transformasi = cv2.warpAffine(gambar_asli, matriks_translasi, (gambar_asli.shape[1], gambar_asli.shape[0]))
+            
+            # Konversi gambar transformasi
+            base64_transformasi = image_to_base64(cv2.cvtColor(gambar_transformasi, cv2.COLOR_BGR2RGB))
+            
+            # Tambahkan gambar transformasi ke HTML
+            html_content += f"""
+            <div class="image-wrapper">
+                <h3>Gambar Translasi</h3>
+                <img src="data:image/png;base64,{base64_transformasi}" alt="Gambar Translasi">
+            </div>
+        </div>
+        """
 
+        elif transform_type == 'Rotasi':
+            sudut = st.slider("Sudut Rotasi (derajat)", -180, 180, 45)
+            
+            # Transformasi
+            tengah = (gambar_asli.shape[1] // 2, gambar_asli.shape[0] // 2)
+            matriks_rotasi = cv2.getRotationMatrix2D(tengah, sudut, 1.0)
+            gambar_transformasi = cv2.warpAffine(gambar_asli, matriks_rotasi, (gambar_asli.shape[1], gambar_asli.shape[0]))
+            
+            # Konversi gambar transformasi
+            base64_transformasi = image_to_base64(cv2.cvtColor(gambar_transformasi, cv2.COLOR_BGR2RGB))
+            
+            # Tambahkan gambar transformasi ke HTML
+            html_content += f"""
+            <div class="image-wrapper">
+                <h3>Gambar Rotasi</h3>
+                <img src="data:image/png;base64,{base64_transformasi}" alt="Gambar Rotasi">
+            </div>
+        </div>
+        """
 
-# 2. Rotasi
-angle = math.radians(45)
-rotation_matrix = np.array([[math.cos(angle), -math.sin(angle), 0],
-                            [math.sin(angle), math.cos(angle), 0],
-                            [0, 0, 1]])
+        elif transform_type == 'Skala':
+            skala_x = st.slider("Skala Horizontal", 0.5, 3.0, 1.5)
+            skala_y = st.slider("Skala Vertikal", 0.5, 3.0, 1.5)
+            
+            # Transformasi
+            gambar_transformasi = cv2.resize(gambar_asli, None, fx=skala_x, fy=skala_y, interpolation=cv2.INTER_LINEAR)
+            
+            # Konversi gambar transformasi
+            base64_transformasi = image_to_base64(cv2.cvtColor(gambar_transformasi, cv2.COLOR_BGR2RGB))
+            
+            # Tambahkan gambar transformasi ke HTML
+            html_content += f"""
+            <div class="image-wrapper">
+                <h3>Gambar Skala</h3>
+                <img src="data:image/png;base64,{base64_transformasi}" alt="Gambar Skala">
+            </div>
+        </div>
+        """
 
-center_x, center_y = w // 2, h // 2
-rotated_image = np.zeros_like(image)
+        elif transform_type == 'Distorsi':
+            skew_x = st.slider("Distorsi Horizontal", 0.0, 2.0, 1.5)
+            skew_y = st.slider("Distorsi Vertikal", 0.0, 2.0, 0.5)
+            
+            # Transformasi
+            h, w = gambar_asli.shape[:2]
+            pts1 = np.float32([[0,0], [w-1,0], [0,h-1], [w-1,h-1]])
+            pts2 = np.float32([[0,0], 
+                               [w-1,0], 
+                               [skew_x*w,h-1], 
+                               [(1+skew_y)*w-1,h-1]])
+            matriks_distorsi = cv2.getPerspectiveTransform(pts1, pts2)
+            gambar_transformasi = cv2.warpPerspective(gambar_asli, matriks_distorsi, (w, h))
+            
+            # Konversi gambar transformasi
+            base64_transformasi = image_to_base64(cv2.cvtColor(gambar_transformasi, cv2.COLOR_BGR2RGB))
+            
+            # Tambahkan gambar transformasi ke HTML
+            html_content += f"""
+            <div class="image-wrapper">
+                <h3>Gambar Distorsi</h3>
+                <img src="data:image/png;base64,{base64_transformasi}" alt="Gambar Distorsi">
+            </div>
+        </div>
+        """
 
-for y in range(h):
-    for x in range(w):
-        relative_coords = np.array([x - center_x, y - center_y, 1])
-        new_coords = rotation_matrix @ relative_coords
-        new_x, new_y = int(new_coords[0] + center_x), int(new_coords[1] + center_y)
+        # Tampilkan HTML
+        st.markdown(html_content, unsafe_allow_html=True)
 
-        if 0 <= new_x < w and 0 <= new_y < h:
-            rotated_image[new_y, new_x] = image[y, x]
-
-
-# 3. Scaling
-scaling_matrix = np.array([[1.5, 0, 0],
-                           [0, 1.5, 0],
-                           [0, 0, 1]])
-
-scaled_h, scaled_w = int(h * 1.5), int(w * 1.5)
-scaled_image = np.zeros((scaled_h, scaled_w, 3), dtype=image.dtype)
-
-for y in range(h):
-    for x in range(w):
-        original_coords = np.array([x, y, 1])
-        new_coords = scaling_matrix @ original_coords
-        new_x, new_y = int(new_coords[0]), int(new_coords[1])
-
-        if 0 <= new_x < scaled_w and 0 <= new_y < scaled_h:
-            scaled_image[new_y, new_x] = image[y, x]
-
-
-# 4. Skewing
-skewing_matrix = np.array([[1, 1.5, 0],
-                            [0.5, 1, 0],
-                            [0, 0, 1]])
-
-skewed_h, skewed_w = int(h * 2), int(w * 2)
-skewed_image = np.zeros((skewed_h, skewed_w, 3), dtype=image.dtype)
-
-for y in range(h):
-    for x in range(w):
-        original_coords = np.array([x, y, 1])
-        new_coords = skewing_matrix @ original_coords
-        new_x, new_y = int(new_coords[0]), int(new_coords[1])
-
-        if 0 <= new_x < skewed_w and 0 <= new_y < skewed_h:
-            skewed_image[new_y, new_x] = image[y, x]
-
-cv2.imshow("Original Image", image)
-cv2.imshow("Translated Image", translated_image)
-cv2.imshow("Rotated Image", rotated_image)
-cv2.imshow("Scaled Image", scaled_image)
-cv2.imshow("Skewed Image", skewed_image)
-
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+if __name__ == "__main__":
+    main()
